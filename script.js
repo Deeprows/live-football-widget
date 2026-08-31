@@ -1,422 +1,816 @@
 class FootballWidget {
     constructor() {
-        this.apiKey = localStorage.getItem('footballApiKey') || '';
-        this.currentLeague = '39'; // Premier League default
+        this.currentLeague = 'all';
         this.currentTab = 'live';
         this.refreshInterval = null;
-        this.refreshRate = 30000; // 30 seconds for live matches
-        
+        this.refreshRate = 60000; // 60 seconds
+
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.loadStoredApiKey();
         this.switchTab('live');
-        
-        if (this.apiKey) {
-            this.startAutoRefresh();
-            this.loadMatches();
-        }
+        this.startAutoRefresh();
     }
 
     setupEventListeners() {
-        // API Key management
-        document.getElementById('saveApiKey').addEventListener('click', () => {
-            this.saveApiKey();
-        });
+        const leagueSelect = document.getElementById('leagueSelect');
 
-        document.getElementById('apiKey').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.saveApiKey();
-            }
-        });
+        if (leagueSelect) {
+            leagueSelect.addEventListener('change', (e) => {
+                this.currentLeague = e.target.value;
+                this.loadMatches();
+            });
+        }
 
-        // League selector
-        document.getElementById('leagueSelect').addEventListener('change', (e) => {
-            this.currentLeague = e.target.value;
-            this.loadMatches();
-        });
-
-        // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                this.switchTab(e.target.dataset.tab);
+                this.switchTab(e.currentTarget.dataset.tab);
             });
         });
 
-        // Refresh button
-        document.getElementById('refreshBtn').addEventListener('click', () => {
-            this.loadMatches();
-        });
+        const refreshBtn = document.getElementById('refreshBtn');
 
-        // Modal functionality
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadMatches();
+            });
+        }
+
         const modal = document.getElementById('matchModal');
         const closeBtn = document.querySelector('.close');
-        
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
 
-        window.addEventListener('click', (e) => {
-            if (e.target === modal) {
+        if (closeBtn && modal) {
+            closeBtn.addEventListener('click', () => {
                 modal.style.display = 'none';
-            }
-        });
-    }
+            });
 
-    loadStoredApiKey() {
-        if (this.apiKey) {
-            document.getElementById('apiKey').value = this.apiKey;
-            document.querySelector('.api-config').style.display = 'none';
-        }
-    }
-
-    saveApiKey() {
-        const apiKeyInput = document.getElementById('apiKey');
-        const apiKey = apiKeyInput.value.trim();
-        
-        if (!apiKey) {
-            alert('Please enter your API key');
-            return;
+            window.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
         }
 
-        this.apiKey = apiKey;
-        localStorage.setItem('footballApiKey', apiKey);
-        
-        // Hide API config section
-        document.querySelector('.api-config').style.display = 'none';
-        
-        // Start loading data
-        this.startAutoRefresh();
-        this.loadMatches();
-        
-        // Show success message
-        this.showNotification('API key saved successfully!', 'success');
+        // Hide old API-key configuration
+        const apiConfig = document.querySelector('.api-config');
+
+        if (apiConfig) {
+            apiConfig.style.display = 'none';
+        }
     }
 
     switchTab(tabName) {
         this.currentTab = tabName;
-        
-        // Update tab buttons
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
         });
-        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-        
-        // Update sections
+
+        const activeButton = document.querySelector(
+            `[data-tab="${tabName}"]`
+        );
+
+        if (activeButton) {
+            activeButton.classList.add('active');
+        }
+
         document.querySelectorAll('.matches-section').forEach(section => {
             section.classList.remove('active');
         });
-        document.getElementById(`${tabName}Matches`).classList.add('active');
-        
-        // Load matches for the current tab
+
+        const activeSection = document.getElementById(
+            `${tabName}Matches`
+        );
+
+        if (activeSection) {
+            activeSection.classList.add('active');
+        }
+
         this.loadMatches();
     }
 
     async loadMatches() {
-        if (!this.apiKey) {
-            this.showError('Please configure your API key first');
-            return;
-        }
+        const loadingId =
+            `loading${this.currentTab.charAt(0).toUpperCase() +
+            this.currentTab.slice(1)}`;
 
-        const loadingId = `loading${this.currentTab.charAt(0).toUpperCase() + this.currentTab.slice(1)}`;
         const listId = `${this.currentTab}MatchesList`;
-        
+
         this.showLoading(loadingId, true);
 
         try {
-            let endpoint = '';
-            const today = new Date().toISOString().split('T')[0];
-            
-            switch (this.currentTab) {
-                case 'live':
-                    endpoint = `fixtures?live=all&league=${this.currentLeague}&season=2024`;
-                    break;
-                case 'today':
-                    endpoint = `fixtures?date=${today}&league=${this.currentLeague}&season=2024`;
-                    break;
-                case 'upcoming':
-                    const tomorrow = new Date();
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-                    endpoint = `fixtures?from=${tomorrow.toISOString().split('T')[0]}&to=${new Date(tomorrow.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&league=${this.currentLeague}&season=2024`;
-                    break;
+            const response = await fetch(
+                'https://sportscore.com/api/widget/matches/?sport=football&limit=50'
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
             }
 
-            const matches = await this.fetchFromAPI(endpoint);
-            this.displayMatches(matches, listId);
+            const data = await response.json();
+
+            const matches = data.matches || [];
+
+            const filteredMatches =
+                this.filterMatches(matches);
+
+            this.displayMatches(
+                filteredMatches,
+                listId
+            );
+
             this.updateLastRefresh();
-            
+
         } catch (error) {
-            this.showError(`Failed to load ${this.currentTab} matches: ${error.message}`);
+            console.error('SportScore API error:', error);
+
+            this.showError(
+                `Failed to load football matches: ${error.message}`
+            );
+
         } finally {
             this.showLoading(loadingId, false);
         }
     }
 
-    async fetchFromAPI(endpoint) {
-        const response = await fetch(`https://api-football-v1.p.rapidapi.com/v3/${endpoint}`, {
-            method: 'GET',
-            headers: {
-                'X-RapidAPI-Key': this.apiKey,
-                'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
-            }
-        });
+    filterMatches(matches) {
+        const now = Date.now();
 
-        if (!response.ok) {
-            if (response.status === 429) {
-                throw new Error('API rate limit exceeded. Please wait before making more requests.');
-            } else if (response.status === 403) {
-                throw new Error('Invalid API key or insufficient permissions.');
-            } else {
-                throw new Error(`HTTP error! status: ${response.status}`);
+        return matches.filter(match => {
+
+            const status =
+                String(
+                    match.status ||
+                    match.status_type ||
+                    match.state ||
+                    ''
+                ).toLowerCase();
+
+            const timestamp =
+                match.start_timestamp ||
+                match.timestamp ||
+                match.startTime ||
+                0;
+
+            const matchTime =
+                timestamp
+                    ? timestamp < 10000000000
+                        ? timestamp * 1000
+                        : timestamp
+                    : 0;
+
+            const isLive =
+                status.includes('live') ||
+                status.includes('inplay') ||
+                status.includes('in_play') ||
+                status === '1h' ||
+                status === '2h' ||
+                status === 'ht';
+
+            const isFinished =
+                status.includes('finished') ||
+                status.includes('ended') ||
+                status === 'ft';
+
+            if (this.currentTab === 'live') {
+                return isLive;
             }
+
+            if (this.currentTab === 'today') {
+                if (!matchTime) return true;
+
+                const today = new Date();
+                const date = new Date(matchTime);
+
+                return (
+                    date.getFullYear() === today.getFullYear() &&
+                    date.getMonth() === today.getMonth() &&
+                    date.getDate() === today.getDate()
+                );
+            }
+
+            if (this.currentTab === 'upcoming') {
+                return !isLive &&
+                       !isFinished &&
+                       (!matchTime || matchTime >= now);
+            }
+
+            return true;
+        });
+    }
+
+    normalizeMatch(match) {
+
+        const home =
+            match.home_team ||
+            match.home ||
+            match.homeTeam ||
+            {};
+
+        const away =
+            match.away_team ||
+            match.away ||
+            match.awayTeam ||
+            {};
+
+        const homeName =
+            home.name ||
+            home.title ||
+            match.home_name ||
+            'Home Team';
+
+        const awayName =
+            away.name ||
+            away.title ||
+            match.away_name ||
+            'Away Team';
+
+        const homeLogo =
+            home.logo ||
+            home.logo_url ||
+            home.image ||
+            '';
+
+        const awayLogo =
+            away.logo ||
+            away.logo_url ||
+            away.image ||
+            '';
+
+        const homeScore =
+            home.score ??
+            match.home_score ??
+            match.homeScore ??
+            null;
+
+        const awayScore =
+            away.score ??
+            match.away_score ??
+            match.awayScore ??
+            null;
+
+        const timestamp =
+            match.start_timestamp ||
+            match.timestamp ||
+            match.startTime ||
+            null;
+
+        const date =
+            timestamp
+                ? timestamp < 10000000000
+                    ? timestamp * 1000
+                    : timestamp
+                : null;
+
+        const status =
+            String(
+                match.status ||
+                match.status_type ||
+                match.state ||
+                ''
+            );
+
+        const isLive =
+            status.toLowerCase().includes('live') ||
+            status.toLowerCase().includes('inplay') ||
+            status.toLowerCase().includes('in_play');
+
+        const isFinished =
+            status.toLowerCase().includes('finished') ||
+            status.toLowerCase().includes('ended') ||
+            status.toLowerCase() === 'ft';
+
+        let statusText = 'Scheduled';
+
+        if (isLive) {
+            statusText = 'LIVE';
+        } else if (isFinished) {
+            statusText = 'Finished';
         }
 
-        const data = await response.json();
-        return data.response || [];
+        return {
+            raw: match,
+
+            fixture: {
+                id:
+                    match.id ||
+                    match.match_id ||
+                    Math.random(),
+
+                date:
+                    date || Date.now(),
+
+                status: {
+                    short:
+                        isLive
+                            ? 'LIVE'
+                            : isFinished
+                                ? 'FT'
+                                : 'NS',
+
+                    long:
+                        statusText,
+
+                    elapsed:
+                        match.minute ||
+                        match.elapsed ||
+                        null
+                },
+
+                venue: {
+                    name:
+                        match.venue?.name ||
+                        match.stadium?.name ||
+                        'Unknown Venue',
+
+                    city:
+                        match.venue?.city ||
+                        match.stadium?.city ||
+                        'Unknown'
+                },
+
+                referee:
+                    match.referee?.name ||
+                    match.referee ||
+                    null
+            },
+
+            teams: {
+                home: {
+                    name: homeName,
+                    logo: homeLogo
+                },
+
+                away: {
+                    name: awayName,
+                    logo: awayLogo
+                }
+            },
+
+            goals: {
+                home: homeScore,
+                away: awayScore
+            },
+
+            score: match.score || {}
+        };
     }
 
     displayMatches(matches, containerId) {
-        const container = document.getElementById(containerId);
-        
+
+        const container =
+            document.getElementById(containerId);
+
+        if (!container) return;
+
         if (!matches || matches.length === 0) {
+
             container.innerHTML = `
                 <div class="no-matches">
                     <i class="fas fa-calendar-times"></i>
                     <p>No ${this.currentTab} matches found</p>
                 </div>
             `;
+
             return;
         }
 
-        container.innerHTML = matches.map(match => this.createMatchCard(match)).join('');
-        
-        // Add click listeners for match details
-        container.querySelectorAll('.match-card').forEach((card, index) => {
-            card.addEventListener('click', () => {
-                this.showMatchDetails(matches[index]);
+        const normalized =
+            matches.map(match =>
+                this.normalizeMatch(match)
+            );
+
+        container.innerHTML =
+            normalized
+                .map(match =>
+                    this.createMatchCard(match)
+                )
+                .join('');
+
+        container
+            .querySelectorAll('.match-card')
+            .forEach((card, index) => {
+
+                card.addEventListener('click', () => {
+
+                    this.showMatchDetails(
+                        normalized[index]
+                    );
+
+                });
+
             });
-        });
     }
 
     createMatchCard(match) {
+
         const fixture = match.fixture;
         const teams = match.teams;
         const goals = match.goals;
-        const score = match.score;
-        
-        const isLive = fixture.status.short === '1H' || fixture.status.short === '2H' || fixture.status.short === 'HT' || fixture.status.short === 'ET';
-        const isFinished = fixture.status.short === 'FT' || fixture.status.short === 'AET' || fixture.status.short === 'PEN';
-        
-        let statusClass = 'status-scheduled';
-        let statusText = 'Scheduled';
-        
+
+        const isLive =
+            fixture.status.short === 'LIVE';
+
+        const isFinished =
+            fixture.status.short === 'FT';
+
+        let statusClass =
+            'status-scheduled';
+
+        let statusText =
+            'Scheduled';
+
         if (isLive) {
-            statusClass = 'status-live';
-            statusText = `${fixture.status.elapsed || 0}'`;
+
+            statusClass =
+                'status-live';
+
+            statusText =
+                fixture.status.elapsed
+                    ? `${fixture.status.elapsed}'`
+                    : 'LIVE';
+
         } else if (isFinished) {
-            statusClass = 'status-finished';
-            statusText = 'Finished';
+
+            statusClass =
+                'status-finished';
+
+            statusText =
+                'Finished';
         }
 
-        const matchTime = new Date(fixture.date).toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        const matchTime =
+            fixture.date
+                ? new Date(
+                    fixture.date
+                ).toLocaleTimeString(
+                    'en-US',
+                    {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }
+                )
+                : '--:--';
 
         return `
-            <div class="match-card ${isLive ? 'live' : ''}" data-fixture-id="${fixture.id}">
+            <div
+                class="match-card ${isLive ? 'live' : ''}"
+                data-fixture-id="${fixture.id}"
+            >
+
                 <div class="match-header">
-                    <div class="match-time">${matchTime}</div>
-                    <div class="match-status ${statusClass}">${statusText}</div>
+
+                    <div class="match-time">
+                        ${matchTime}
+                    </div>
+
+                    <div class="match-status ${statusClass}">
+                        ${statusText}
+                    </div>
+
                 </div>
-                
+
                 <div class="match-teams">
+
                     <div class="team home">
-                        <img src="${teams.home.logo}" alt="${teams.home.name}" class="team-logo" onerror="this.style.display='none'">
-                        <span class="team-name">${teams.home.name}</span>
+
+                        ${
+                            teams.home.logo
+                            ? `
+                            <img
+                                src="${teams.home.logo}"
+                                alt="${teams.home.name}"
+                                class="team-logo"
+                                onerror="this.style.display='none'"
+                            >
+                            `
+                            : ''
+                        }
+
+                        <span class="team-name">
+                            ${teams.home.name}
+                        </span>
+
                     </div>
-                    
+
                     <div class="match-score">
-                        <span>${goals.home !== null ? goals.home : '-'}</span>
-                        <span class="score-separator">:</span>
-                        <span>${goals.away !== null ? goals.away : '-'}</span>
+
+                        <span>
+                            ${
+                                goals.home !== null &&
+                                goals.home !== undefined
+                                    ? goals.home
+                                    : '-'
+                            }
+                        </span>
+
+                        <span class="score-separator">
+                            :
+                        </span>
+
+                        <span>
+                            ${
+                                goals.away !== null &&
+                                goals.away !== undefined
+                                    ? goals.away
+                                    : '-'
+                            }
+                        </span>
+
                     </div>
-                    
+
                     <div class="team away">
-                        <img src="${teams.away.logo}" alt="${teams.away.name}" class="team-logo" onerror="this.style.display='none'">
-                        <span class="team-name">${teams.away.name}</span>
+
+                        ${
+                            teams.away.logo
+                            ? `
+                            <img
+                                src="${teams.away.logo}"
+                                alt="${teams.away.name}"
+                                class="team-logo"
+                                onerror="this.style.display='none'"
+                            >
+                            `
+                            : ''
+                        }
+
+                        <span class="team-name">
+                            ${teams.away.name}
+                        </span>
+
                     </div>
+
                 </div>
-                
-                ${fixture.status.short !== 'NS' ? this.createEventsPreview(match) : ''}
+
+                ${
+                    fixture.status.short !== 'NS'
+                        ? this.createEventsPreview(match)
+                        : ''
+                }
+
             </div>
         `;
     }
 
     createEventsPreview(match) {
-        // This would normally fetch events from the API, but for preview we'll show basic info
+
         return `
             <div class="match-events">
-                <div class="events-title">Match Info</div>
-                <div class="event">
-                    <i class="fas fa-map-marker-alt event-icon"></i>
-                    <span class="event-player">${match.fixture.venue.name || 'Unknown Venue'}</span>
+
+                <div class="events-title">
+                    Match Info
                 </div>
+
+                <div class="event">
+
+                    <i class="fas fa-map-marker-alt event-icon"></i>
+
+                    <span class="event-player">
+                        ${
+                            match.fixture.venue.name ||
+                            'Football match'
+                        }
+                    </span>
+
+                </div>
+
             </div>
         `;
     }
 
     async showMatchDetails(match) {
-        const modal = document.getElementById('matchModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalContent = document.getElementById('modalContent');
-        
-        modalTitle.textContent = `${match.teams.home.name} vs ${match.teams.away.name}`;
-        
-        // Show loading in modal
+
+        const modal =
+            document.getElementById('matchModal');
+
+        const modalTitle =
+            document.getElementById('modalTitle');
+
+        const modalContent =
+            document.getElementById('modalContent');
+
+        if (!modal || !modalContent) return;
+
+        modalTitle.textContent =
+            `${match.teams.home.name} vs ${match.teams.away.name}`;
+
         modalContent.innerHTML = `
             <div class="loading">
-                <i class="fas fa-spinner fa-spin"></i> Loading match details...
+                <i class="fas fa-spinner fa-spin"></i>
+                Loading match details...
             </div>
         `;
-        
+
         modal.style.display = 'block';
-        
-        try {
-            // Fetch detailed match events
-            const events = await this.fetchFromAPI(`fixtures/events?fixture=${match.fixture.id}`);
-            const statistics = await this.fetchFromAPI(`fixtures/statistics?fixture=${match.fixture.id}`);
-            
-            modalContent.innerHTML = this.createDetailedMatchView(match, events, statistics);
-        } catch (error) {
-            modalContent.innerHTML = `
-                <div class="error">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <p>Failed to load match details: ${error.message}</p>
-                </div>
-            `;
-        }
+
+        /*
+         * The SportScore matches endpoint gives us
+         * the match information used by the main cards.
+         *
+         * We don't call the old API-Football events/
+         * statistics endpoints anymore.
+         */
+
+        modalContent.innerHTML =
+            this.createDetailedMatchView(
+                match
+            );
     }
 
-    createDetailedMatchView(match, events, statistics) {
-        const eventsHtml = events && events.length > 0 ? 
-            events.map(event => this.createEventElement(event)).join('') :
-            '<p>No events available</p>';
-            
+    createDetailedMatchView(match) {
+
+        const homeScore =
+            match.goals.home ?? '-';
+
+        const awayScore =
+            match.goals.away ?? '-';
+
         return `
             <div class="detailed-match">
-                <div class="match-summary">
-                    <div class="team-detail">
-                        <img src="${match.teams.home.logo}" alt="${match.teams.home.name}" class="team-logo">
-                        <h3>${match.teams.home.name}</h3>
-                        <div class="score">${match.goals.home !== null ? match.goals.home : '-'}</div>
-                    </div>
-                    
-                    <div class="vs-separator">
-                        <div class="match-status">${match.fixture.status.long}</div>
-                        <div class="match-time">${new Date(match.fixture.date).toLocaleString()}</div>
-                    </div>
-                    
-                    <div class="team-detail">
-                        <img src="${match.teams.away.logo}" alt="${match.teams.away.name}" class="team-logo">
-                        <h3>${match.teams.away.name}</h3>
-                        <div class="score">${match.goals.away !== null ? match.goals.away : '-'}</div>
-                    </div>
-                </div>
-                
-                <div class="match-details-tabs">
-                    <h4>Match Events</h4>
-                    <div class="events-list">
-                        ${eventsHtml}
-                    </div>
-                </div>
-                
-                <div class="venue-info">
-                    <h4>Venue Information</h4>
-                    <p><strong>Stadium:</strong> ${match.fixture.venue.name || 'Unknown'}</p>
-                    <p><strong>City:</strong> ${match.fixture.venue.city || 'Unknown'}</p>
-                    <p><strong>Referee:</strong> ${match.fixture.referee || 'Unknown'}</p>
-                </div>
-            </div>
-        `;
-    }
 
-    createEventElement(event) {
-        let iconClass = 'fas fa-info-circle';
-        let eventClass = '';
-        
-        switch (event.type) {
-            case 'Goal':
-                iconClass = 'fas fa-futbol goal-icon';
-                eventClass = 'goal-icon';
-                break;
-            case 'Card':
-                iconClass = event.detail === 'Yellow Card' ? 'fas fa-square card-yellow' : 'fas fa-square card-red';
-                eventClass = event.detail === 'Yellow Card' ? 'card-yellow' : 'card-red';
-                break;
-            case 'subst':
-                iconClass = 'fas fa-exchange-alt substitution';
-                eventClass = 'substitution';
-                break;
-        }
-        
-        return `
-            <div class="event ${eventClass}">
-                <i class="${iconClass} event-icon"></i>
-                <span class="event-minute">${event.time.elapsed}'</span>
-                <span class="event-player">${event.player.name} ${event.assist ? `(Assist: ${event.assist.name})` : ''}</span>
-                <span class="event-team">${event.team.name}</span>
+                <div class="match-summary">
+
+                    <div class="team-detail">
+
+                        ${
+                            match.teams.home.logo
+                            ? `
+                            <img
+                                src="${match.teams.home.logo}"
+                                alt="${match.teams.home.name}"
+                                class="team-logo"
+                            >
+                            `
+                            : ''
+                        }
+
+                        <h3>
+                            ${match.teams.home.name}
+                        </h3>
+
+                        <div class="score">
+                            ${homeScore}
+                        </div>
+
+                    </div>
+
+                    <div class="vs-separator">
+
+                        <div class="match-status">
+                            ${match.fixture.status.long}
+                        </div>
+
+                        <div class="match-time">
+                            ${
+                                new Date(
+                                    match.fixture.date
+                                ).toLocaleString()
+                            }
+                        </div>
+
+                    </div>
+
+                    <div class="team-detail">
+
+                        ${
+                            match.teams.away.logo
+                            ? `
+                            <img
+                                src="${match.teams.away.logo}"
+                                alt="${match.teams.away.name}"
+                                class="team-logo"
+                            >
+                            `
+                            : ''
+                        }
+
+                        <h3>
+                            ${match.teams.away.name}
+                        </h3>
+
+                        <div class="score">
+                            ${awayScore}
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="venue-info">
+
+                    <h4>
+                        Venue Information
+                    </h4>
+
+                    <p>
+                        <strong>Stadium:</strong>
+                        ${
+                            match.fixture.venue.name ||
+                            'Unknown'
+                        }
+                    </p>
+
+                    <p>
+                        <strong>City:</strong>
+                        ${
+                            match.fixture.venue.city ||
+                            'Unknown'
+                        }
+                    </p>
+
+                    <p>
+                        <strong>Referee:</strong>
+                        ${
+                            match.fixture.referee ||
+                            'Unknown'
+                        }
+                    </p>
+
+                </div>
+
             </div>
         `;
     }
 
     startAutoRefresh() {
+
         this.stopAutoRefresh();
-        
-        this.refreshInterval = setInterval(() => {
-            if (this.currentTab === 'live') {
+
+        this.refreshInterval =
+            setInterval(() => {
+
                 this.loadMatches();
-            }
-        }, this.refreshRate);
+
+            }, this.refreshRate);
     }
 
     stopAutoRefresh() {
+
         if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
+
+            clearInterval(
+                this.refreshInterval
+            );
+
             this.refreshInterval = null;
         }
     }
 
     showLoading(elementId, show) {
-        const element = document.getElementById(elementId);
+
+        const element =
+            document.getElementById(elementId);
+
         if (element) {
-            element.style.display = show ? 'block' : 'none';
+
+            element.style.display =
+                show ? 'block' : 'none';
         }
     }
 
     showError(message) {
-        this.showNotification(message, 'error');
+
+        this.showNotification(
+            message,
+            'error'
+        );
     }
 
-    showNotification(message, type = 'info') {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
+    showNotification(
+        message,
+        type = 'info'
+    ) {
+
+        const notification =
+            document.createElement('div');
+
+        notification.className =
+            `notification ${type}`;
+
         notification.innerHTML = `
-            <i class="fas ${type === 'error' ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i>
-            <span>${message}</span>
+            <i class="fas ${
+                type === 'error'
+                    ? 'fa-exclamation-triangle'
+                    : 'fa-check-circle'
+            }"></i>
+
+            <span>
+                ${message}
+            </span>
         `;
-        
-        // Add styles
+
         notification.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
             padding: 15px 20px;
-            background: ${type === 'error' ? '#dc3545' : '#28a745'};
+            background: ${
+                type === 'error'
+                    ? '#dc3545'
+                    : '#28a745'
+            };
             color: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -425,84 +819,45 @@ class FootballWidget {
             align-items: center;
             gap: 10px;
             max-width: 400px;
-            animation: slideIn 0.3s ease;
         `;
-        
-        document.body.appendChild(notification);
-        
-        // Auto remove after 5 seconds
+
+        document.body.appendChild(
+            notification
+        );
+
         setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
+
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(
+                    notification
+                );
+            }
+
         }, 5000);
     }
 
     updateLastRefresh() {
-        const now = new Date().toLocaleTimeString();
-        document.getElementById('lastUpdate').textContent = `Last updated: ${now}`;
+
+        const element =
+            document.getElementById(
+                'lastUpdate'
+            );
+
+        if (element) {
+
+            element.textContent =
+                `Last updated: ${
+                    new Date().toLocaleTimeString()
+                }`;
+        }
     }
 }
 
-// Add CSS animations for notifications
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-    
-    .detailed-match .team-detail {
-        text-align: center;
-        flex: 1;
-    }
-    
-    .detailed-match .team-detail .score {
-        font-size: 48px;
-        font-weight: bold;
-        color: #1e3c72;
-        margin: 10px 0;
-    }
-    
-    .detailed-match .match-summary {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 30px;
-        padding: 20px;
-        background: #f8f9fa;
-        border-radius: 10px;
-    }
-    
-    .detailed-match .vs-separator {
-        text-align: center;
-        padding: 0 20px;
-    }
-    
-    .detailed-match .events-list {
-        max-height: 300px;
-        overflow-y: auto;
-        margin-top: 15px;
-    }
-    
-    .detailed-match .venue-info {
-        margin-top: 30px;
-        padding: 20px;
-        background: #f8f9fa;
-        border-radius: 10px;
-    }
-`;
-document.head.appendChild(style);
 
-// Initialize the widget when the page loads
-document.addEventListener('DOMContentLoaded', () => {
-    new FootballWidget();
-});
+// Initialize
+document.addEventListener(
+    'DOMContentLoaded',
+    () => {
+        new FootballWidget();
+    }
+);
